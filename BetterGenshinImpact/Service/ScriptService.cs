@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Recognition;
+using BetterGenshinImpact.Core.Input;
 using BetterGenshinImpact.Core.Script;
 using BetterGenshinImpact.Core.Script.Dependence;
 using BetterGenshinImpact.Core.Script.Group;
@@ -21,11 +24,14 @@ using BetterGenshinImpact.GameTask.FarmingPlan;
 using BetterGenshinImpact.GameTask.LogParse;
 using BetterGenshinImpact.GameTask.Runtime;
 using BetterGenshinImpact.GameTask.TaskProgress;
+using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.Service.Notification;
 using BetterGenshinImpact.Service.Notification.Model.Enum;
 using BetterGenshinImpact.ViewModel.Pages;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Localization;
+using Vanara.PInvoke;
 
 namespace BetterGenshinImpact.Service;
 
@@ -610,7 +616,10 @@ public partial class ScriptService : IScriptService
     private static partial Regex DispatcherAddTimerRegex();
 
 
-    public static async Task StartGameTask(bool waitForMainUi = true)
+    public static Task StartGameTask(bool waitForMainUi = true)
+        => StartGameTask(waitForMainUi, recoverAdventurerHandbook: false);
+
+    internal static async Task StartGameTask(bool waitForMainUi, bool recoverAdventurerHandbook)
     {
         // 没启动时候，启动截图器
         // 静态方法无法构造注入（调用方包括直接 new 出来的 TaskRunner），这里从容器取服务
@@ -627,9 +636,13 @@ public partial class ScriptService : IScriptService
                     var first = true;
                     var sw = Stopwatch.StartNew();
                     var loseFocusCount = 0;
+                    var lastRecoveryAttempt = TimeSpan.Zero;
+                    var startupToken = recoverAdventurerHandbook
+                        ? CancellationContext.Instance.Cts.Token
+                        : CancellationToken.None;
                     while (true)
                     {
-                        if (CancellationContext.Instance.IsCancellationRequested)
+                        if (CancellationContext.Instance.IsCancellationRequested || startupToken.IsCancellationRequested)
                         {
                             TaskControl.Logger.LogInformation("检测到停止指令，退出启动等待");
                             return;
@@ -651,12 +664,44 @@ public partial class ScriptService : IScriptService
                         {
                             first = false;
                             TaskControl.Logger.LogInformation("当前不在游戏主界面，等待进入主界面后执行任务...");
-                            TaskControl.Logger.LogInformation("如果你已经在游戏内的其他界面，请自行退出当前界面（ESC），或是30秒后将程序将自动尝试到入主界面，使当前任务能够继续运行！");
+                            TaskControl.Logger.LogInformation(recoverAdventurerHandbook
+                                ? "30秒后将尝试关闭识别到的冒险之证委托页；其他界面请手动返回主界面（ESC）。"
+                                : "如果你已经在游戏内的其他界面，请自行退出当前界面（ESC），或是30秒后将程序将自动尝试到入主界面，使当前任务能够继续运行！");
                         }
 
                         await Task.Delay(500);
                         if (sw.Elapsed.TotalSeconds >= 30)
                         {
+                            if (recoverAdventurerHandbook && sw.Elapsed - lastRecoveryAttempt >= TimeSpan.FromSeconds(30))
+                            {
+                                lastRecoveryAttempt = sw.Elapsed;
+                                try
+                                {
+                                    var sent = await StartupHandbookRecovery.TryCloseAsync(
+                                        TaskControl.TaskSemaphore,
+                                        () => gameRuntimeService.IsRunning
+                                              && TaskContext.Instance().IsInitialized
+                                              && !CancellationContext.Instance.IsCancellationRequested
+                                              && !RunnerContext.Instance.IsSuspend
+                                              && SystemControl.IsGenshinImpactActiveByProcess(),
+                                        IsAdventurerCommissionPage,
+                                        () => InputHub.Foreground.Keyboard.KeyPress(User32.VK.VK_ESCAPE),
+                                        startupToken);
+                                    if (sent)
+                                        TaskControl.Logger.LogInformation("识别到冒险之证委托页，已发送关闭按键，重新检测启动条件");
+                                }
+                                catch (OperationCanceledException) when (startupToken.IsCancellationRequested)
+                                {
+                                    return;
+                                }
+                                catch (Exception ex)
+                                {
+                                    TaskControl.Logger.LogWarning(ex, "启动阶段识别冒险之证失败，保留等待状态");
+                                }
+                                // 必须重新截图；恢复后不继续使用本轮恢复前的画面。
+                                continue;
+                            }
+
                             //防止自启动游戏后因为一些原因失焦，导致一直卡住
                             if (!SystemControl.IsGenshinImpactActiveByProcess())
                             {
@@ -686,6 +731,28 @@ public partial class ScriptService : IScriptService
         {
             await pendingUpdate;
             ScriptRepoUpdater.Instance.CommandLineAutoUpdateTask = null;
+        }
+    }
+
+    private static bool IsAdventurerCommissionPage()
+    {
+        // 只处理本次已知卡点，避免在登录、加载或其他未知界面盲按 ESC/Enter。
+        var localizer = App.GetService<IStringLocalizer<CheckRewardsTask>>()!;
+        var culture = new CultureInfo(TaskContext.Instance().Config.OtherConfig.GameCultureInfoName);
+        var commissions = localizer.WithCultureGet(culture, "委托");
+        var dailyRewards = localizer.WithCultureGet(culture, "每日委托奖励");
+        using var capture = TaskControl.CaptureToRectArea();
+        if (Bv.IsInMainUi(capture) || Bv.IsInDomain(capture)) return false;
+        var regions = capture.FindMulti(RecognitionObject.Ocr(
+            capture.Width * 0.1, capture.Height * 0.1, capture.Width * 0.4, capture.Height * 0.8));
+        try
+        {
+            return regions.Any(r => r.Text.Trim() == commissions)
+                   && regions.Any(r => r.Text.Contains(dailyRewards, StringComparison.Ordinal));
+        }
+        finally
+        {
+            foreach (var region in regions) region.Dispose();
         }
     }
 }
