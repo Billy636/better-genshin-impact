@@ -1,3 +1,10 @@
+## 本 fork 的日常开发约定
+
+- 用户指定的本地源码目录是 `D:\cWorking\BGICode`，日常个人修改放在 `Lycia-dev` 分支。
+- `origin` 指向 `Billy636/better-genshin-impact`；`upstream` 指向 `babalae/better-genshin-impact`。`main` 保留用于跟进公版，个人功能以独立提交维护，便于后续按需提交 PR。
+- 构建和修改限于源码目录；不自动替换、启动或操作本机及远程正在使用的 BGI，不覆盖真实安装目录的 `User`。
+- 个人改动和验证范围见 `Docs/Lycia-dev.md`。编译和离线检查不能当作游戏内实测结果。
+
 本项目使用了 WPF-UI、 CommunityToolkit.Mvvm、Microsoft.Xaml.Behaviors.Wpf 来实现 MVVM 架构。在编写代码的时候请注意：
 
 ### 主要依赖框架
