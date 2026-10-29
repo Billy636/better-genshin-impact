@@ -83,3 +83,14 @@ dotnet build BetterGenshinImpact/BetterGenshinImpact.csproj -c Release -p:Platfo
 ```
 
 用户已明确授权本轮通过 SSH 向笔记本的独立目录部署计时版、复制配置并切换启动入口。保留旧版目录及原启动配置作为回退；不将真实 `User` 数据提交到 Git。
+
+本次交付记录：
+
+- Release/x64 编译及单文件发布通过（0 错误）；计时检查 11 项、书本恢复检查 10 项全部通过。汇总脚本已用检查生成的 JSONL 验证。
+- 发布版本 `0.66.3-alpha.1+Lycia.Timing.20261029`，核心代码提交 `0f431f8c`。笔记本 EXE 的 SHA256 为 `AB95900EEC3C80D0E754344C5DA2C523D4C32E1A371FB4816BC7A92811231A49`，与本地发布产物一致。
+- 笔记本独立目录：`D:\Game\BetterGI-Lycia-Timing-20261029`。复制原茶包版的完整 User，20 个配置组文件逐一哈希一致；依赖脚本、路线和战斗策略存在，计时开关已启用。
+- ABGI 的 `BetterGIAddress`、莫酱的 `bgiFolder` 与脚本文件监控路径均切换到新目录；收益自动汇总任务也已切换，任务最近结果为 0。历史收益事件保留原证据路径。
+- 沿用莫酱原有每日 `04:05` 定时与联机调度规则，不另建重复的一条龙定时。重启后确认莫酱登录成功，控制配置仍指向新目录。
+- 已用交互会话的 `BGI-Lycia-Timing-Manual` 任务启动该 EXE，进程实际路径指向上述目录，启动日志无错误。仅启动空闲 BGI 主程序，未开始游戏内路线测试。
+- 原程序目录保留；启动配置及收益任务动作备份在笔记本 `D:\Game\Lycia-Timing-backup-20261029`，其中 `Rollback.ps1` 可在退出游戏后恢复原启动路径。新目录内的测试数据会保留，不会自动回写覆盖旧 User。
+- 笔记本桌面新增 `BGI-Lycia-计时版.lnk`。次日测试日志位于新目录的 `log/pathing-timing`；首条路线结束或取消时才会生成 JSONL。
