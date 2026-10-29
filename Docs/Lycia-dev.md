@@ -43,3 +43,19 @@ dotnet build BetterGenshinImpact/BetterGenshinImpact.csproj -c Release -p:Platfo
 ```
 
 构建输出在 `BetterGenshinImpact/bin/x64/Release/net8.0-windows10.0.22621.0`。构建不等同部署，不自动覆盖正在使用的 BGI。
+
+## 2026-10-29：同步官方 main
+
+- 同步基线：官方 `main` 的 `94c1de65fa5c525496a776ad63087162626dfbe7`（2026-10-28，扩大自动地脉花交互选项识别范围）。相对此前基线 `14537eae`，补齐 9 个提交，项目版本更新至 `0.66.3-alpha.1`。
+- 官方默认分支已切换为 `refactor/20260930`，包含 .NET 10 和任务系统等大规模重构。本个人版继续沿用既有的官方 `main` 基线；“已同步”仅指上述 main 提交，不代表已迁移到默认重构分支。
+- `main` 快进同步；`Lycia-dev` 使用合并保留已发布的个人提交，不改写远端历史。同步前状态保存在 `backup/Lycia-dev-before-sync-20261029`（`ef6ebac0`）。
+- 冒险之证委托页恢复修复完整保留；同步后，`ScriptService.cs`、`StartupHandbookRecovery.cs` 和个人修改的 `OneDragonFlowViewModel.cs` 与同步前一致。
+- 同步操作限于源码仓库与其中的编译产物，未部署到真实安装目录，也未运行主程序或操作游戏。
+
+本次验证：
+
+- Release/x64 主项目构建通过，0 错误、583 个警告（未在此次同步中清理公版警告）。
+- `StartupHandbookRecovery.Checks` 的 10 项行为检查全部通过。
+- 按 `FolderProfile` 成功发布 win-x64 单文件版本，保留 .NET 8 桌面运行时依赖。发布命令覆盖 `Version=0.66.3-alpha.1+Lycia.20261029.94c1de65`，源码项目版本继续保持公版值。
+- 新发布包位于 `BetterGenshinImpact/bin/publish/Lycia-20261029/`，入口为其中的 `BetterGI.exe`；旧目录中的历史发布包不代表本次构建。
+- 构建及发布日志归档在 `BetterGenshinImpact/bin/sync-20261029/`。编译与离线检查通过不等同于游戏内实测通过。
