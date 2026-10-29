@@ -59,3 +59,27 @@ dotnet build BetterGenshinImpact/BetterGenshinImpact.csproj -c Release -p:Platfo
 - 按 `FolderProfile` 成功发布 win-x64 单文件版本，保留 .NET 8 桌面运行时依赖。发布命令覆盖 `Version=0.66.3-alpha.1+Lycia.20261029.94c1de65`，源码项目版本继续保持公版值。
 - 新发布包位于 `BetterGenshinImpact/bin/publish/Lycia-20261029/`，入口为其中的 `BetterGI.exe`；旧目录中的历史发布包不代表本次构建。
 - 构建及发布日志归档在 `BetterGenshinImpact/bin/sync-20261029/`。编译与离线检查通过不等同于游戏内实测通过。
+
+## 2026-10-29：锄地四阶段基线计时
+
+目的：先测量现有行为，暂不缩短等待、改动路线、战斗或拾取策略。计时不新增识图和游戏输入，每条地图追踪结束或取消后向独立 JSONL 写入一条记录，输出错误不会传播到游戏任务。
+
+- 开关：在运行目录创建空文件 `User/pathing-timing.enabled`；默认关闭。删除该文件后，从下一条路线起停止记录。
+- 产物：`log/pathing-timing/timing-yyyyMMdd-进程号.jsonl`。记录配置组、路线、点位、分段、尝试次数、版本、完成状态和阶段明细。
+- `Teleport`：传送点处理，含开图、选择、加载和传送后等待；`teleport_loading_wait` 是其中的等待子项。
+- `Move`：移动前操作、转向、粗略移动及精确靠近；`move_recovery` 是其中的脱困子项。
+- `Fight`：战斗 action，扣除其内部明确的战后拾取阶段。`fight_end_check` 记录已有结束检查的占用时间，不推断最后一只怪死亡时刻。
+- `Pickup`：战后拾取判断、聚物及周边扫描，或显式拾取 action；包括已有冷却与等待。伴随跑图/战斗的 JS 模板拾取和 AutoPick 不额外叠加计时。
+- `Other`：初始化、换队、恢复及动作完成后的固定等待等。五类主阶段互斥，合计等于路线墙钟总时长；子项已包含在主阶段内，不能重复相加。
+- `party_end_checks`、`pickup_empty_sweeps`、`move_recoveries`、路线重试等只计数原有事件。没有把按 F 次数或路线声明怪物数当作实际拾取/击杀数量。
+- 墙钟时间包含手动暂停；取消/失败路线以独立状态保留，基线分析需分开。路线外 JS 的准备、传送与配置组间等待不在这条路线的计时范围内。
+
+验证：`dotnet run --project Test/PathingTiming.Checks/PathingTiming.Checks.csproj -c Release` 覆盖默认关闭、嵌套阶段互斥、配置组和异步上下文隔离、取消留档及磁盘/日志故障隔离；原书本恢复检查另行回归。未以启动游戏作为代码检查方式。
+
+分析次日数据：
+
+```powershell
+./Build/Scripts/Summarize-PathingTiming.ps1 -LogDirectory '<运行目录>/log/pathing-timing' -Day 20261030
+```
+
+用户已明确授权本轮通过 SSH 向笔记本的独立目录部署计时版、复制配置并切换启动入口。保留旧版目录及原启动配置作为回退；不将真实 `User` 数据提交到 Git。

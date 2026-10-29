@@ -135,6 +135,9 @@ public partial class PathExecutor
 
     public async Task Pathing(PathingTask task)
     {
+        using var routeTiming = PathingTiming.TryStart(task.FileName, Global.StartUpPath,
+            () => ct.IsCancellationRequested ? "cancelled" : SuccessEnd ? "completed" : "incomplete",
+            ex => Logger.LogWarning(ex, "地图追踪耗时记录失败，继续原任务"));
         // SuspendableDictionary;
         const string sdKey = "PathExecutor";
         var sd = RunnerContext.Instance.SuspendableDictionary;
@@ -186,11 +189,13 @@ public partial class PathExecutor
                     foreach (var waypoint in waypoints) // 一条路径
                     {
                         CurWaypoint = (waypoints.FindIndex(wps => wps == waypoint), waypoint);
+                        PathingTiming.SetWaypoint(CurWaypoint.Item1, CurWaypoints.Item1, i + 1);
                         TryCloseSkipOtherOperations();
                         await RecoverWhenLowHp(waypoint); // 低血量恢复
 
                         if (waypoint.Type == WaypointType.Teleport.Code)
                         {
+                            using var teleportTiming = PathingTiming.Phase("Teleport");
                             if (CurWaypoints.Item1 > 0)
                             {
                                 var prevWaypoints = waypointsList[CurWaypoints.Item1 - 1];
@@ -211,24 +216,27 @@ public partial class PathExecutor
                         }
                         else
                         {
-                            await BeforeMoveToTarget(waypoint);
-                            // Path不用走得很近，Target需要接近，但都需要先移动到对应位置
-                            if (waypoint.Type == WaypointType.Orientation.Code)
+                            using (PathingTiming.Phase("Move"))
                             {
-                                // 方位点，只需要朝向
-                                // 考虑到方位点大概率是作为执行action的最后一个点，所以放在此处处理，不和传送点一样单独处理
-                                await FaceTo(waypoint);
-                            }
-                            else if (waypoint.Action != ActionEnum.UpDownGrabLeaf.Code)
-                            {
-                                await MoveTo(waypoint);
-                            }
+                                await BeforeMoveToTarget(waypoint);
+                                // Path不用走得很近，Target需要接近，但都需要先移动到对应位置
+                                if (waypoint.Type == WaypointType.Orientation.Code)
+                                {
+                                    // 方位点，只需要朝向
+                                    // 考虑到方位点大概率是作为执行action的最后一个点，所以放在此处处理，不和传送点一样单独处理
+                                    await FaceTo(waypoint);
+                                }
+                                else if (waypoint.Action != ActionEnum.UpDownGrabLeaf.Code)
+                                {
+                                    await MoveTo(waypoint);
+                                }
 
-                            await BeforeMoveCloseToTarget(waypoint);
+                                await BeforeMoveCloseToTarget(waypoint);
 
-                            if (IsTargetPoint(waypoint))
-                            {
-                                await MoveCloseTo(waypoint);
+                                if (IsTargetPoint(waypoint))
+                                {
+                                    await MoveCloseTo(waypoint);
+                                }
                             }
 
                             //skipOtherOperations如果重试，则跳过相关操作，
@@ -284,11 +292,13 @@ public partial class PathExecutor
                 }
                 catch (RetryException retryException)
                 {
+                    PathingTiming.Count("route_retries");
                     StartSkipOtherOperations();
                     Logger.LogWarning(retryException.Message);
                 }
                 catch (RetryNoCountException retryException)
                 {
+                    PathingTiming.Count("route_retries_no_count");
                     //特殊情况下，重试不消耗次数
                     i--;
                     StartSkipOtherOperations();
@@ -884,6 +894,8 @@ public partial class PathExecutor
                             Logger.LogWarning("疑似卡死，尝试脱离...");
 
                             //调用脱困代码，由TrapEscaper接管移动
+                            using var recoveryTiming = PathingTiming.Detail("move_recovery");
+                            PathingTiming.Count("move_recoveries");
                             await _trapEscaper.RotateAndMove();
                             await _trapEscaper.MoveTo(waypoint);
                             InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
@@ -1169,12 +1181,20 @@ public partial class PathExecutor
         {
             var handler = ActionFactory.GetAfterHandler(waypoint.Action);
             //,PartyConfig
-            await handler.RunAsync(ct, waypoint, PartyConfig);
+            var phase = waypoint.Action == ActionEnum.Fight.Code || waypoint.Action == ActionEnum.CombatScript.Code
+                ? "Fight"
+                : waypoint.Action == ActionEnum.PickAround.Code || waypoint.Action == ActionEnum.PickUpCollect.Code
+                    ? "Pickup" : "Other";
+            using (PathingTiming.Phase(phase))
+            {
+                await handler.RunAsync(ct, waypoint, PartyConfig);
+            }
             //统计结束战斗的次数
             if (waypoint.Action == ActionEnum.Fight.Code)
             {
                 SuccessFight++;
             }
+            using var settleTiming = PathingTiming.Detail("action_finished_wait");
             await Delay(1000, ct);
         }
     }

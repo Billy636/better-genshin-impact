@@ -527,6 +527,7 @@ public class AutoFightTask : ISoloTask
             FightStatusFlag = false;
         }
 
+        using var pickupTiming = PathingTiming.Phase("Pickup");
         try
         {
             // 基于经验值检测结果的拾取判断
@@ -855,6 +856,7 @@ public class AutoFightTask : ISoloTask
     public static async Task<bool> CheckFightFinish(TaskFightFinishDetectConfig finishDetectConfig,
         CancellationToken ct, int delayTime = 1500, int detectDelayTime = 450)
     {
+        using var checkTiming = PathingTiming.Detail("fight_end_check");
         // 开战后一段时间阻断战斗结束检查：距离开战时间小于配置值时，提前返回并视为战斗未结束
         if (finishDetectConfig.BlockCheckBeforeBattleSeconds > 0 &&
             (DateTime.Now - FightStartTime).TotalSeconds < finishDetectConfig.BlockCheckBeforeBattleSeconds)
@@ -920,6 +922,7 @@ public class AutoFightTask : ISoloTask
             
             // Logger.LogInformation("打开编队界面检查战斗是否结束，延时{detectDelayTime}毫秒检查", detectDelayTime);
             Logger.LogInformation("打开编队界面检查战斗是否结束");
+            PathingTiming.Count("party_end_checks");
             // 最终方案确认战斗结束
             InputHub.Foreground.SimulateAction(GIActions.OpenPartySetupScreen);
 

@@ -1001,6 +1001,7 @@ public class TpTask
     /// </summary>
     private async Task WaitForTeleportCompletion()
     {
+        using var loadingTiming = PathingTiming.Detail("teleport_loading_wait");
         var observedLoadingState = false;
         var consecutiveNonUiChecks = 0;
         var consecutiveMainUiChecks = 0;

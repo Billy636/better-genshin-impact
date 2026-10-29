@@ -45,6 +45,8 @@ public class ScanPickTask
 
     public async Task DoOnce(CancellationToken ct, int? seconds = null)
     {
+        using var pickupTiming = PathingTiming.Phase("Pickup");
+        using var scanTiming = PathingTiming.Detail("pickup_scan");
         // 每次扫描独立持有模型，结束或取消时释放，允许同一任务实例再次扫描。
         using var predictor = App.ServiceProvider.GetRequiredService<BgiOnnxFactory>().CreateYoloPredictor(BgiOnnxModel.BgiWorld);
         var sec = seconds ?? TaskContext.Instance().Config.AutoFightConfig.PickDropsAfterFightSeconds;
@@ -61,6 +63,7 @@ public class ScanPickTask
             if (!hasItems)
             {
                 InputHub.ReleaseAll();
+                using var searchTiming = PathingTiming.Detail("pickup_search");
                 await ResetCamera(ct);
                 for (var i = 0; i < 10 && timeoutStopwatch.Elapsed < finishTime; i++)
                 {
@@ -77,6 +80,7 @@ public class ScanPickTask
             // 一整圈都没有发现物品时，不要提前结束扫描，继续按配置时长扫描
             if (!hasItems)
             {
+                PathingTiming.Count("pickup_empty_sweeps");
                 continue;
             }
 

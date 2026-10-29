@@ -431,6 +431,7 @@ public class AutoFightJsonTask : ISoloTask
                 AutoFightTask.FightStatusFlag = false;
             }
     
+            using var pickupTiming = PathingTiming.Phase("Pickup");
             try
             {
                 // 基于经验值检测结果的拾取判断
